@@ -1,0 +1,431 @@
+head	1.2;
+access;
+symbols;
+locks
+	sprduser:1.2.1.3
+	sprduser:1.2
+	liz:1.1; strict;
+comment	@# @;
+
+
+1.2
+date	2012.11.07.08.24.56;	author liz;	state Exp;
+branches
+	1.2.1.1;
+next	1.1;
+
+1.1
+date	2012.11.07.03.45.07;	author liz;	state Exp;
+branches;
+next	;
+
+1.2.1.1
+date	2012.11.09.03.10.00;	author liz;	state Exp;
+branches;
+next	1.2.1.2;
+
+1.2.1.2
+date	2012.11.09.03.17.39;	author liz;	state Exp;
+branches;
+next	1.2.1.3;
+
+1.2.1.3
+date	2012.11.13.09.04.23;	author liz;	state Exp;
+branches;
+next	;
+
+
+desc
+@init rcs control
+@
+
+
+1.2
+log
+@Queue test
+@
+text
+@import socket 
+import struct
+import time
+import select
+import gtk,gobject
+import threading,Queue
+import pygtk
+import subprocess as sub
+from update import *
+
+#hostdic={}
+Q=Queue.Queue()
+def xdmcpbroadcast():
+	host=''
+	port=6688
+	s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+	s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+	s.setsockopt(socket.SOL_SOCKET,socket.SO_BROADCAST,1)
+	try:
+		s.bind((host,port))
+	except:
+		print 'Socket bind error!'
+	else:
+		hostlist=[]
+		iplist=[]
+		version=struct.pack('>H',1)
+		qureycode=struct.pack('>H',1)
+		length=struct.pack('>H',1)
+		authcode=struct.pack('b',0)
+		sendmess='from max!'
+		messlen=struct.pack('>H',len(sendmess))
+		packet=version+qureycode+length+authcode+messlen+sendmess
+		braddr=getip()
+		s.sendto(packet,(braddr,177))
+	#	s.settimeout(1)
+		hostdic={}
+		while 1:
+			try:
+				mes,add=s.recvfrom(1024)
+				hostname,detail=formathost(mes)
+				Q.put((hostname,detail,add[0]))
+			#	hostdic[hostname]=[detail,add[0]]
+			except:
+				break
+		s.close()
+		return Q
+
+def getip():
+	try:
+		ip=socket.gethostbyname(socket.gethostname())
+	except:
+		print 'Cannot get ip info!'
+	else:
+		mip=ip.split('.')
+		mip.pop()
+		mip.append('255')
+		braddr='.'.join(mip)
+		return braddr
+
+def formathost(mes):
+	hostlen,=struct.unpack('>H',mes[8:10])	
+	hostname=mes[10:10+int(hostlen)]
+
+	detailstart=12+int(hostlen)
+	detaillen,=struct.unpack('>H',mes[detailstart:detailstart+2])
+	detail=mes[detailstart:detailstart+detaillen]
+
+	return hostname,detail
+
+class sprdlogin(gtk.Window):
+	def __init__(self):
+		super(sprdlogin,self).__init__()
+		self.set_position(gtk.WIN_POS_CENTER)
+		self.set_size_request(800,500)
+		self.set_title('Spreadtrum Unix Login')
+		self.connect('destroy',self.quit)
+
+		self.vb=gtk.VBox()
+		self.popupinit()
+
+		self.mklist()
+		scroll=gtk.ScrolledWindow()
+		scroll.add(self.listview)
+
+		self.rebt=gtk.Button('Refresh')
+		self.rebt.connect('clicked',self.godis)
+		self.quitbt=gtk.Button('Quit')
+		self.quitbt.connect('clicked',self.quit)
+		self.aboutbt=gtk.Button('About')
+		self.aboutbt.connect('clicked',self.about)
+
+		btbox=gtk.HButtonBox()
+		btbox.pack_start(self.aboutbt,False)
+		btbox.pack_start(self.rebt,False)
+		btbox.pack_start(self.quitbt,False)
+
+		self.screennum=5
+		
+		self.updatethread()
+
+		self.vb.pack_start(scroll)
+		self.vb.pack_end(btbox,0)
+		
+		self.add(self.vb)
+		self.show_all()
+
+	def about(self,widget):
+		aw=gtk.AboutDialog()
+		aw.set_version('V1.0')
+		aw.set_name('Sprdlogin')
+		aw.set_authors(['Lizhuang.Yang@@spreadtrum.com'])
+		aw.run()
+		aw.destroy()
+
+	def run(self):
+		gtk.main()
+
+	def quit(self,widget):
+		gtk.main_quit()
+
+	def mklist(self):
+		self.listview=gtk.TreeView()
+
+		cell=gtk.CellRendererText()
+
+		hostcol=gtk.TreeViewColumn('ServerName',cell,text=0)
+		ipcol=gtk.TreeViewColumn('IP',cell,text=1)
+		detailcol=gtk.TreeViewColumn('Detail',cell,text=2)
+		statuscol=gtk.TreeViewColumn('Status',cell,text=3)
+
+		hostcol.set_property('clickable',True)
+		ipcol.set_property('clickable',True)
+		detailcol.set_property('clickable',True)
+		hostcol.connect('clicked',self.sortcol)
+		ipcol.connect('clicked',self.sortcol)
+		detailcol.connect('clicked',self.sortcol)
+
+		self.listview.append_column(hostcol)
+		self.listview.append_column(ipcol)
+		self.listview.append_column(detailcol)
+		self.listview.append_column(statuscol)
+
+		self.liststore=gtk.ListStore(str,str,str,str)
+
+		self.listview.connect('row-activated',self.gotest)
+		self.listview.connect('button_press_event',self.rightmouse)
+
+		self.listview.set_model(self.liststore)
+		self.listview.columns_autosize()
+
+	def disinfo(self):
+		try:
+			#self.hostdic=xdmcpbroadcast()
+			xdmcpbroadcast()
+	#		self.liststore.clear()
+	#		while not Q.empty():
+	#			hostname,detail=Q.get()
+	#		#for i in self.hostdic.keys():
+	#		#	value=self.hostdic[i]
+	#			status=''
+	#			self.liststore.append([hostname,detail,status])
+		except:
+			print 'Error get hostdic!'
+
+	def godis(self,widget):
+		t=threading.Thread(target=self.disinfo)
+		t.start()
+		self.liststore.clear()
+		while 1:
+			hostname,detail,ip=Q.get()
+			print hostname,detail
+			#for i in self.hostdic.keys():
+			#	value=self.hostdic[i]
+			status=''
+			self.liststore.append([hostname,ip,detail,status])
+			if Q.empty():
+				break
+
+	def updatethread(self):
+		ut=threading.Thread(target=self.updaterun)
+		ut.start()
+
+	def updaterun(self):
+		if getinfo():
+			update(getupdatefile(infodic))
+		else:
+			print 'No update!'
+
+	def gotest(self,treeview,path,col):
+		model=treeview.get_model()
+		ip=model[path][1]
+		self.prun(ip,'xdmcp')
+
+	def Xnestmenurun(self,menuitem):
+		self.prun(self.ip,'xdmcp')
+
+	def vncmenurun(self,menuitem):
+		self.prun(self.ip,'vnc')
+
+	def prun(self,ip,type):
+		t=threading.Thread(target=self.cmdinfo,args=(ip,type))
+		t.setDaemon(True)
+		t.start()
+
+	def cmdinfo(self,ip,type):
+		if ip:
+			if type=='xdmcp':
+				num=':'+str(self.screennum)
+				cmd=['/usr/bin/Xnest','-query',ip,num]
+				self.screennum=self.screennum+1
+			elif type=='vnc':
+				ip='clinux2:3'
+				cmd=['/usr/bin/vncviewer',ip]
+			xp=sub.Popen(cmd)
+
+	def rightmouse(self,treeview,event):
+		if event.button == 3:
+			pathinfo=treeview.get_path_at_pos(int(event.x),int(event.y))
+			if pathinfo:
+				path,col,cellx,celly=pathinfo
+				model=treeview.get_model()
+				self.ip=model[path][1]
+				self.popupmenu.popup(None,None,None,event.button,event.time)
+
+
+	def popupinit(self):
+		self.popupmenu=gtk.Menu()
+		self.vncmenu=gtk.MenuItem('VNC')
+		self.vncitmenu=gtk.Menu()
+		self.vnccreatemenu=gtk.MenuItem('VNC Create')
+		self.vncitmenu.append(self.vnccreatemenu)
+		self.vncmenu.set_submenu(self.vncitmenu)
+		self.xdmcpmenu=gtk.MenuItem('XDMCP')
+
+		self.popupmenu.append(self.vncmenu)
+		self.popupmenu.append(self.xdmcpmenu)
+		self.vncmenu.show()
+		self.vnccreatemenu.show()
+		self.xdmcpmenu.show()
+		self.xdmcpmenu.connect('activate',self.Xnestmenurun)
+		self.vnccreatemenu.connect('activate',self.vncmenurun)
+
+	def sortcol(self,treecol):
+		treecol.set_sort_indicator(True)
+		treecol.set_sort_column_id(0)
+		treecol.set_sort_order(gtk.SORT_ASCENDING)
+
+if __name__ == '__main__':
+	gobject.threads_init()
+	gtk.gdk.threads_init()
+	win=sprdlogin()
+	gtk.gdk.threads_enter()
+	win.run()
+	gtk.gdk.threads_leave()
+	#xdmcpbroadcast()
+	#print dich
+@
+
+
+1.2.1.1
+log
+@Queue and thread Goodwork!
+@
+text
+@d35 1
+a35 1
+		s.settimeout(2)
+d39 1
+a39 1
+				mes,add=s.recvfrom(8192)
+a44 1
+		print 'xdmcp is end'
+d86 1
+a86 1
+		self.rebt.connect('clicked',self.runthread)
+a106 2
+		self.bool=1
+
+d154 1
+a154 2
+			txdmcp=threading.Thread(target=xdmcpbroadcast)
+			txdmcp.start()
+d161 1
+a161 1
+#			self.liststore.append([hostname,detail,status])
+a163 11
+	def runthread(self,widget):
+		self.disinfo()
+		td=threading.Thread(target=self.godis)
+		td.start()
+		ttime=threading.Thread(target=self.timethread)
+		ttime.start()
+
+	def timethread(self):
+		time.sleep(2)
+		self.bool=0
+		print 'timethread is end@@'
+d165 3
+a167 1
+	def godis(self):
+d169 3
+a171 6
+		self.bool=1
+		while self.bool:
+			self.rebt.set_sensitive(0)
+			if not Q.empty():
+				hostname,detail,ip=Q.get()
+				print hostname,detail
+d174 4
+a177 4
+				status=''
+				self.liststore.append([hostname,ip,detail,status])
+		self.rebt.set_sensitive(1)
+		print 'godis is end!'
+@
+
+
+1.2.1.2
+log
+@beta version
+@
+text
+@d45 1
+d178 1
+d187 1
+a187 1
+	#			print hostname,detail
+d193 1
+@
+
+
+1.2.1.3
+log
+@add status
+@
+text
+@a223 1
+				self.status[0][self.status[1]][3]="Xdmcp run"
+a235 1
+				self.status=(model,path)
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d6 1
+a6 1
+import threading
+d12 1
+a12 1
+
+d35 1
+a35 1
+		s.settimeout(1)
+d41 2
+a42 1
+				hostdic[hostname]=[detail,add[0]]
+d46 1
+a46 1
+		return hostdic
+a104 5
+	#	self.rebt.show()
+	#	self.vb.show()
+	#	self.listview.show()
+	#	scroll.show()
+	#	self.show()
+a106 2
+
+
+d153 9
+a161 1
+			self.hostdic=xdmcpbroadcast()
+a163 6
+		else:
+			self.liststore.clear()
+			for i in self.hostdic.keys():
+				value=self.hostdic[i]
+				status=''
+				self.liststore.append([i,value[1],value[0],status])
+d168 10
+@

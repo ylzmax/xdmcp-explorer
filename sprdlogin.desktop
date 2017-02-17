@@ -1,0 +1,18 @@
+#!/usr/bin/env xdg-open
+[Desktop Entry]
+Name=SprdLogin
+Comment=Use the command line
+TryExec=/usr/bin/sprdloginrun
+Exec=sprdloginrun
+Icon=/usr/share/sprdlogin/icon.png
+Type=Application
+StartupNotify=true
+OnlyShowIn=GNOME;Unity;
+Keywords=Run;
+Actions=New
+X-Ubuntu-Gettext-Domain=gnome-terminal
+
+[Desktop Action New]
+Name=New Sprdlogin
+Exec=sprdlogin
+OnlyShowIn=Unity
